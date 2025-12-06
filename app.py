@@ -1318,12 +1318,22 @@ def update_table(categories, statuses, projects, topics_selected):
 # RUN APPLICATION
 # ============================================
 
+# Expose server for Gunicorn (Required for Render)
+server = app.server
+
 if __name__ == '__main__':
+    import os
+    
     print("\n" + "="*60)
     print("🏗️  CONSTRUCTION INSPECTION ANALYTICS DASHBOARD")
     print("="*60)
     print("\n📊 Dashboard is starting...")
-    print("🌐 Open your browser and navigate to: http://127.0.0.1:8050")
+    
+    # Use PORT from environment variable for Render, default to 8050 for local
+    port = int(os.environ.get('PORT', 8050))
+    debug = os.environ.get('DEBUG', 'True').lower() == 'true'
+    
+    print(f"🌐 Running on port: {port}")
     print("\n💡 Press Ctrl+C to stop the server\n")
     
-    app.run_server(debug=True, port=8050)
+    app.run_server(debug=debug, host='0.0.0.0', port=port)

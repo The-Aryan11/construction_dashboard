@@ -10,23 +10,99 @@ from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
 from sklearn.decomposition import LatentDirichletAllocation, NMF
 from sklearn.cluster import KMeans
 from collections import Counter
-import nltk
-from nltk.corpus import stopwords
-from nltk.tokenize import word_tokenize
-from nltk.stem import WordNetLemmatizer
 import re
-import json
 from datetime import datetime, timedelta
 import random
+import os
+import ssl
 
-# Download required NLTK data
+# ============================================
+# NLTK SETUP - SIMPLE & ROBUST
+# ============================================
+
+# Fix SSL for downloads
 try:
-    nltk.data.find('tokenizers/punkt')
-except LookupError:
-    nltk.download('punkt')
-    nltk.download('stopwords')
-    nltk.download('wordnet')
-    nltk.download('punkt_tab')
+    _create_unverified_https_context = ssl._create_unverified_context
+except AttributeError:
+    pass
+else:
+    ssl._create_default_https_context = _create_unverified_https_context
+
+# Import and download NLTK
+import nltk
+
+# Simple download - just try to download, ignore if already exists
+def setup_nltk():
+    """Download NLTK data with simple error handling"""
+    packages = ['punkt', 'stopwords', 'wordnet', 'punkt_tab', 'omw-1.4']
+    for package in packages:
+        try:
+            nltk.download(package, quiet=True)
+        except Exception as e:
+            print(f"Note: {package} - {e}")
+
+# Run setup
+setup_nltk()
+
+# Now try to import NLTK modules with fallbacks
+try:
+    from nltk.corpus import stopwords
+    STOPWORDS = set(stopwords.words('english'))
+except:
+    # Fallback stopwords
+    STOPWORDS = {'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 
+                 'of', 'with', 'by', 'from', 'is', 'are', 'was', 'were', 'be', 'been',
+                 'being', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would',
+                 'could', 'should', 'may', 'might', 'must', 'shall', 'can', 'need',
+                 'this', 'that', 'these', 'those', 'it', 'its', 'i', 'you', 'he', 'she',
+                 'we', 'they', 'what', 'which', 'who', 'whom', 'where', 'when', 'why', 'how'}
+
+try:
+    from nltk.tokenize import word_tokenize
+    USE_NLTK_TOKENIZER = True
+except:
+    USE_NLTK_TOKENIZER = False
+
+try:
+    from nltk.stem import WordNetLemmatizer
+    LEMMATIZER = WordNetLemmatizer()
+    USE_LEMMATIZER = True
+except:
+    USE_LEMMATIZER = False
+
+
+# ============================================
+# SIMPLE TOKENIZER FALLBACK
+# ============================================
+
+def simple_tokenize(text):
+    """Simple tokenizer that works without NLTK"""
+    # Remove punctuation and split
+    text = re.sub(r'[^\w\s]', ' ', text.lower())
+    return text.split()
+
+def tokenize(text):
+    """Tokenize text with fallback"""
+    if USE_NLTK_TOKENIZER:
+        try:
+            return word_tokenize(text.lower())
+        except:
+            return simple_tokenize(text)
+    return simple_tokenize(text)
+
+def lemmatize(word):
+    """Lemmatize word with fallback"""
+    if USE_LEMMATIZER:
+        try:
+            return LEMMATIZER.lemmatize(word)
+        except:
+            return word
+    return word
+
+
+# ============================================
+# CONSTRUCTION INSPECTION ANALYZER CLASS
+# ============================================
 
 class ConstructionInspectionAnalyzer:
     """
@@ -34,8 +110,7 @@ class ConstructionInspectionAnalyzer:
     """
     
     def __init__(self):
-        self.lemmatizer = WordNetLemmatizer()
-        self.stop_words = set(stopwords.words('english'))
+        self.stop_words = STOPWORDS.copy()
         
         # Add construction-specific stop words
         self.custom_stop_words = {
@@ -67,29 +142,18 @@ class ConstructionInspectionAnalyzer:
         """
         
         report_templates = [
-            # Safety-related
             "Safety inspection revealed {issue}. Workers {compliance} wearing proper PPE. {additional}",
             "On-site safety audit completed. {finding}. Recommended {action} for hazard mitigation.",
             "Emergency exit pathways {status}. Fire extinguishers {fire_status}. Safety signage {sign_status}.",
-            
-            # Structural
             "Foundation inspection shows {foundation_status}. Concrete curing {curing_status}. {rebar_note}",
             "Structural steel installation {steel_status}. Welding quality {weld_quality}. Beam connections {connection_status}.",
             "Column alignment verified. {alignment_note}. Load-bearing capacity {capacity_status}.",
-            
-            # Electrical
             "Electrical rough-in inspection: {electrical_finding}. Conduit installation {conduit_status}.",
             "Panel installation {panel_status}. Grounding system {ground_status}. Wire gauge {wire_status}.",
-            
-            # Plumbing
             "Plumbing inspection: {plumbing_finding}. Pressure test results {pressure_status}.",
             "Drainage system {drain_status}. Vent stack installation {vent_status}. {leak_note}",
-            
-            # Quality
             "Quality control inspection identified {quality_issue}. Finish work {finish_status}.",
             "Material quality {material_status}. Workmanship {workmanship_status}. {recommendation}",
-            
-            # Progress
             "Construction progress at {progress}% completion. {schedule_status}. Next milestone: {milestone}.",
             "Phase {phase} inspection completed. Timeline {timeline_status}. {delay_note}"
         ]
@@ -132,7 +196,6 @@ class ConstructionInspectionAnalyzer:
         for i in range(n_reports):
             template = random.choice(report_templates)
             
-            # Fill in template variables
             report_text = template.format(
                 issue=random.choice(issues),
                 compliance=random.choice(compliance),
@@ -180,7 +243,7 @@ class ConstructionInspectionAnalyzer:
                 'minor': 2, 'good': 1, 'excellent': 0, 'meets': 0
             }
             
-            severity = 2  # Default moderate
+            severity = 2
             for word, score in severity_keywords.items():
                 if word in report_text.lower():
                     severity = score
@@ -205,35 +268,23 @@ class ConstructionInspectionAnalyzer:
         return pd.DataFrame(reports)
     
     def preprocess_text(self, text):
-        """
-        Clean and preprocess text for NLP analysis
-        """
-        # Convert to lowercase
+        """Clean and preprocess text for NLP analysis"""
         text = text.lower()
-        
-        # Remove special characters and digits
         text = re.sub(r'[^a-zA-Z\s]', '', text)
         
-        # Tokenize
-        tokens = word_tokenize(text)
+        tokens = tokenize(text)
         
-        # Remove stopwords and lemmatize
-        tokens = [
-            self.lemmatizer.lemmatize(token) 
-            for token in tokens 
-            if token not in self.stop_words and len(token) > 2
-        ]
+        processed_tokens = []
+        for token in tokens:
+            if token not in self.stop_words and len(token) > 2:
+                processed_tokens.append(lemmatize(token))
         
-        return ' '.join(tokens)
+        return ' '.join(processed_tokens)
     
     def extract_keywords(self, df, text_column='report_text', top_n=30):
-        """
-        Extract keywords using TF-IDF
-        """
-        # Preprocess texts
+        """Extract keywords using TF-IDF"""
         processed_texts = df[text_column].apply(self.preprocess_text)
         
-        # TF-IDF Vectorization
         self.vectorizer = TfidfVectorizer(
             max_features=1000,
             ngram_range=(1, 2),
@@ -243,11 +294,9 @@ class ConstructionInspectionAnalyzer:
         
         tfidf_matrix = self.vectorizer.fit_transform(processed_texts)
         
-        # Get feature names and their scores
         feature_names = self.vectorizer.get_feature_names_out()
         tfidf_scores = np.array(tfidf_matrix.mean(axis=0)).flatten()
         
-        # Create keyword dataframe
         keywords_df = pd.DataFrame({
             'keyword': feature_names,
             'tfidf_score': tfidf_scores
@@ -256,13 +305,9 @@ class ConstructionInspectionAnalyzer:
         return keywords_df, tfidf_matrix
     
     def perform_topic_modeling(self, df, text_column='report_text', n_topics=8):
-        """
-        Perform LDA topic modeling
-        """
-        # Preprocess texts
+        """Perform LDA topic modeling"""
         processed_texts = df[text_column].apply(self.preprocess_text)
         
-        # Count Vectorization for LDA
         count_vectorizer = CountVectorizer(
             max_features=1000,
             ngram_range=(1, 2),
@@ -273,7 +318,6 @@ class ConstructionInspectionAnalyzer:
         count_matrix = count_vectorizer.fit_transform(processed_texts)
         feature_names = count_vectorizer.get_feature_names_out()
         
-        # LDA Model
         self.lda_model = LatentDirichletAllocation(
             n_components=n_topics,
             random_state=42,
@@ -283,7 +327,6 @@ class ConstructionInspectionAnalyzer:
         
         lda_output = self.lda_model.fit_transform(count_matrix)
         
-        # Extract topics
         topics = []
         topic_names = [
             "Safety & Compliance", "Structural Work", "Electrical Systems",
@@ -303,7 +346,7 @@ class ConstructionInspectionAnalyzer:
                 'weights': top_weights
             })
         
-        # Assign dominant topic to each document
+        df = df.copy()
         df['dominant_topic'] = lda_output.argmax(axis=1)
         df['topic_name'] = df['dominant_topic'].apply(
             lambda x: topic_names[x] if x < len(topic_names) else f"Topic {x+1}"
@@ -313,9 +356,7 @@ class ConstructionInspectionAnalyzer:
         return topics, lda_output, df
     
     def calculate_statistics(self, df):
-        """
-        Calculate comprehensive statistics
-        """
+        """Calculate comprehensive statistics"""
         stats = {
             'total_reports': len(df),
             'avg_compliance': df['compliance_score'].mean(),
@@ -331,5 +372,11 @@ class ConstructionInspectionAnalyzer:
         }
         return stats
 
-# Initialize analyzer
+
+# ============================================
+# INITIALIZE ANALYZER
+# ============================================
+
 analyzer = ConstructionInspectionAnalyzer()
+
+print("✅ Data processor initialized successfully!")
