@@ -4,9 +4,11 @@ services:
     runtime: python
     buildCommand: |
       pip install -r requirements.txt
-      # ADDED 'omw-1.4' to the downloads list to match data_processor.py
+      # Ensure all NLTK packages are downloaded
       python -c "import nltk; nltk.download('punkt'); nltk.download('stopwords'); nltk.download('wordnet'); nltk.download('punkt_tab'); nltk.download('omw-1.4')"
     startCommand: gunicorn app:server --bind 0.0.0.0:$PORT
     envVars:
       - key: PYTHON_VERSION
-        value: "3.10.0"
+        # Set this to match your .python-version file, or remove it.
+        # We will keep it for consistency.
+        value: "3.10.12"
